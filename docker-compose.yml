@@ -1,0 +1,40 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: appmeta          # app metadata + analysis history
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro   # creates read-only role + sample 'analytics' DB
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d appmeta"]
+      interval: 5s
+      retries: 10
+
+  api:
+    build: .
+    command: uvicorn app.api.main:app --host 0.0.0.0 --port 8000
+    env_file: .env
+    environment:
+      METADATA_DB_URL: postgresql+psycopg://app:app@db:5432/appmeta
+      DATA_DIR: /srv/data
+    volumes:
+      - appdata:/srv/data
+    ports: ["8000:8000"]
+    depends_on:
+      db: {condition: service_healthy}
+
+  ui:
+    build: .
+    command: streamlit run ui/streamlit_app.py --server.port 8501 --server.address 0.0.0.0
+    env_file: .env
+    environment:
+      API_BASE_URL: http://api:8000
+    ports: ["8501:8501"]
+    depends_on: [api]
+
+volumes:
+  pgdata:
+  appdata:
